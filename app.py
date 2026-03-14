@@ -368,69 +368,168 @@ if uploaded_file is not None:
             st.markdown("Powered by Groq & LLaMA-3")
             
             if not api_key:
-                st.warning("🔑 Please enter a Groq API Key in the sidebar to generate AI insights.")
+                st.warning("🔑 Please enter a Groq API Key in the sidebar to unlock Generative AI features.")
             else:
                 if selected_user == 'Overall':
-                    if st.button("Generate Group Topic Analysis", type="primary"):
+                    st.markdown("### 🏆 Group Analysis Mode")
+                    # Let the user choose the AI flavor
+                    ai_mode = st.radio("Select mode:", ["Topic Analysis 📊", "Group Superlatives 🎭"], horizontal=True, label_visibility="collapsed")
+                    
+                    if st.button(f"Generate {ai_mode.split()[0]}", type="primary"):
                         st.session_state['show_llm_analysis'] = True
+                        st.session_state['llm_mode'] = ai_mode # Save which mode they clicked!
                         
-                    if st.session_state.get('show_llm_analysis', False):
-                        with st.spinner("LLaMA-3 is reading the chat..."):
+                    if st.session_state.get('show_llm_analysis', False) and st.session_state.get('llm_mode') == ai_mode:
+                        with st.spinner("LLaMA-3 is analyzing the group dynamics..."):
                             
                             chat_sample = llm_helper.sample_chat_for_llm(df, selected_user)
-                            result = llm_helper.get_group_topics(chat_sample, api_key)
                             
-                            if not result:
-                                st.error("Fatal Error: Received empty response.")
-                            elif "error" in result:
-                                st.error(f"Execution Error: {result['error']}")
-                            else:
-                                st.success("Analysis Complete!")
-                                st.write(f"**Group Dynamic:** {result.get('summary', 'No summary provided.')}")
+                            if "Topic" in ai_mode:
+                                # --- 1. EXTRACT OVERALL GROUP STATS ---
+                                total_msgs = len(df)
                                 
-                                st.markdown("### Top Discussion Themes")
-                                for topic in result.get('topics', []):
-                                    st.markdown(f"**{topic.get('name', 'Unknown')}**")
-                                    try:
-                                        raw_pct = float(topic.get('percentage', 0))
-                                        pct = min(1.0, max(0.0, raw_pct / 100.0))
-                                        st.progress(pct)
-                                    except Exception:
-                                        st.write(f"Percentage: {topic.get('percentage')}%")
-                                    st.caption(topic.get('description', ''))
+                                # Get the top 3 most active users
+                                active_users_df, _ = helper.fetch_frequent_users(df)
+                                top_users = ", ".join(active_users_df['users'].head(3).tolist()) if not active_users_df.empty else "Unknown"
+                                
+                                # Get the top 10 most common words (excluding stopwords)
+                                common_words_df = helper.most_common_words(selected_user, df)
+                                # Assuming common_words_df has the words in the first column (index 0)
+                                top_words = ", ".join(common_words_df[0].head(10).astype(str).tolist()) if not common_words_df.empty else "Unknown"
+                                
+                                group_stats_context = f"""
+                                - Total Messages in Chat: {total_msgs}
+                                - Most Active Members driving the conversation: {top_users}
+                                - Top 10 Most Used Words (excluding standard grammar): {top_words}
+                                """
+
+                                # --- 2. CALL THE UPGRADED API ---
+                                result = llm_helper.get_group_topics(chat_sample, group_stats_context, api_key)
+                                
+                                # --- 3. RENDER RESULTS ---
+                                if not isinstance(result, dict) or "error" in result:
+                                    st.error(f"Execution Error: {result.get('error', 'Unknown')}")
+                                else:
+                                    st.success("Analysis Complete!")
+                                    st.write(f"**Group Dynamic:** {result.get('summary', '')}")
+                                    
+                                    st.markdown("### Top Discussion Themes")
+                                    for topic in result.get('topics', []):
+                                        if isinstance(topic, dict):
+                                            st.markdown(f"**{topic.get('name', 'Unknown')}**")
+                                            try:
+                                                pct = min(1.0, max(0.0, float(topic.get('percentage', 0)) / 100.0))
+                                                st.progress(pct)
+                                            except Exception:
+                                                st.write(f"Share: {topic.get('percentage')}%")
+                                            st.caption(topic.get('description', ''))
+                                            
+                            elif "Superlative" in ai_mode:
+                                result = llm_helper.get_group_superlatives(chat_sample, api_key)
+                                if not isinstance(result, dict) or "error" in result:
+                                    st.error(f"Execution Error: {result.get('error', 'Unknown')}")
+                                else:
+                                    st.success("The Yearbook is ready! 📸")
+                                    superlatives = result.get('superlatives', [])
+                                    
+                                    if isinstance(superlatives, list):
+                                        for item in superlatives:
+                                            if isinstance(item, dict):
+                                                # Use st.info to make each superlative look like a neat card
+                                                st.info(f"**{item.get('user', 'Unknown')}** - 🏆 {item.get('title', 'Participant')}")
+                                                st.write(item.get('reason', ''))
+                                    else:
+                                        st.warning("Could not render superlatives. Model returned an unexpected structure.")
+                                        st.json(result)
 
                 else:
-                    if st.button(f"Generate Persona for {selected_user}", type="primary"):
+                    st.markdown(f"### 👤 Analyze {selected_user}")
+                    ai_mode = st.radio("Select mode:", ["Psychological Profile 🧠", "Roast My Texting 🔥"], horizontal=True, label_visibility="collapsed")
+                    
+                    if st.button(f"Generate {ai_mode.split()[0]}", type="primary"):
                         st.session_state['show_llm_analysis'] = True
+                        st.session_state['llm_mode'] = ai_mode
                         
-                    if st.session_state.get('show_llm_analysis', False):
-                        with st.spinner(f"Analyzing {selected_user}'s texting style..."):
+                    if st.session_state.get('show_llm_analysis', False) and st.session_state.get('llm_mode') == ai_mode:
+                        with st.spinner(f"LLaMA-3 is analyzing {selected_user}'s data..."):
 
                             chat_sample = llm_helper.sample_chat_for_llm(df, selected_user)
-                            result = llm_helper.get_user_persona(chat_sample, selected_user, api_key)
                             
-                            if not result:
-                                st.error("Fatal Error: Received empty response.")
-                            elif "error" in result:
-                                st.error(f"API Error: {result['error']}")
-                            else:
-                                st.success("Profile Generated!")
+                            # --- 1. EXTRACT BEHAVIORAL METRICS ---
+                            # Get the behavioral data for the whole chat
+                            starters, killers, _, response_times = helper.behavioral_analysis(df)
+                            
+                            # Safely extract this specific user's metrics
+                            user_starter = starters[starters['User'] == selected_user]
+                            initiation_rate = user_starter['Starter Rate (%)'].values[0] if not user_starter.empty else "0"
+                            
+                            user_killer = killers[killers['User'] == selected_user]
+                            kill_rate = user_killer['Killer Rate (%)'].values[0] if not user_killer.empty else "0"
+                            
+                            user_response = response_times[response_times['User'] == selected_user]
+                            avg_resp = user_response['Avg Response Time (Mins)'].values[0] if not user_response.empty else "Unknown"
+                            if avg_resp != "Unknown":
+                                avg_resp = round(avg_resp, 1)
+
+                            # Get basic stats and sentiment
+                            user_df = df[df['users'] == selected_user]
+                            total_msgs = len(user_df)
+                            avg_sentiment = "Neutral"
+                            if 'compound_score' in user_df.columns:
+                                score = user_df['compound_score'].mean()
+                                avg_sentiment = "Positive" if score > 0.05 else "Negative" if score < -0.05 else "Neutral"
+                            most_active = f"{user_df['hour'].mode().iloc[0]}:00" if not user_df.empty else 'Unknown'
+
+                            # --- 2. BUILD THE ULTIMATE STATS CONTEXT ---
+                            stats_context = f"""
+                            - Total Messages Sent: {total_msgs}
+                            - Average Emotional Tone: {avg_sentiment}
+                            - Most Active Time of Day: {most_active}
+                            - Conversation Initiation Rate: {initiation_rate}% (How often they start a chat when present)
+                            - Vibe Kill Rate: {kill_rate}% (How often they send the final message that no one replies to)
+                            - Average Response Time: {avg_resp} minutes
+                            """
+                            
+                            # --- 3. ROUTE TO THE CORRECT API ---
+                            if "Profile" in ai_mode:
+                                result = llm_helper.get_user_persona(chat_sample, selected_user, stats_context, api_key)
                                 
-                                col1, col2 = st.columns([1, 2])
-                                with col1:
-                                    st.metric("Vibe Check", result.get('vibe', 'N/A'))
-                                with col2:
-                                    st.write("**Communication Style:**")
-                                    st.info(result.get('communication_style', 'N/A'))
+                                if not isinstance(result, dict) or "error" in result:
+                                    st.error(f"API Error: {result.get('error', 'Unknown')}")
+                                else:
+                                    st.success("Deep Behavioral Profile Generated!")
+                                    st.markdown(f"### 🧠 The Archetype: {result.get('archetype', 'Unknown')}")
+                                    traits = " • ".join(result.get('core_traits', []))
+                                    st.caption(f"**Core Traits:** {traits}")
+                                    st.markdown("---")
                                     
-                                st.write("**Texting Habits:**")
-                                for habit in result.get('frequent_habits', []):
-                                    st.markdown(f"- {habit}")
-                        
-        # --- HIDDEN RAW DATA ---
-        st.markdown("---")
-        with st.expander("🔍 View Raw Chat Data"):
-            st.dataframe(df, use_container_width=True)
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.markdown("**🎭 Social Role in Group**")
+                                        st.info(result.get('social_role', 'N/A'))
+                                        st.markdown("**🗣️ Communication Style**")
+                                        st.info(result.get('communication_style', 'N/A'))
+                                    with col2:
+                                        st.markdown("**🎯 Top Topics of Interest**")
+                                        for topic in result.get('top_interests', []):
+                                            st.markdown(f"- {topic}")
+                                            
+                            elif "Roast" in ai_mode:
+                                result = llm_helper.get_user_roast(chat_sample, selected_user, stats_context, api_key)
+                                
+                                if not isinstance(result, dict) or "error" in result:
+                                    st.error(f"API Error: {result.get('error', 'Unknown')}")
+                                else:
+                                    st.success("Boom. Roasted. 🎤")
+                                    st.markdown(f"### 🔥 The Roast of {selected_user}")
+                                    st.write(result.get('brutal_roast', 'Model refused to roast.'))
+                                    
+                                    st.markdown("---")
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.error(f"🚩 **Biggest Red Flag:**\n\n{result.get('biggest_red_flag', 'N/A')}")
+                                    with col2:
+                                        st.success(f"🟩 **Biggest Green Flag:**\n\n{result.get('biggest_green_flag', 'N/A')}")
 
 else:
     # A welcoming empty state
