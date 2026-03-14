@@ -87,7 +87,7 @@ def preprocess(data: str, filename: str = "") -> pd.DataFrame:
 
     # Filter Bots
     df = df[df['users'].str.strip() != 'Meta AI']
-    if group_name:
+    if group_name and df['users'].unique().size > 2:  # Only filter if it's a group chat
         df = df[df['users'].str.strip() != group_name]
 
     # Clean up any trailing whitespace or newlines in the messages

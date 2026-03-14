@@ -214,7 +214,7 @@ def get_user_roast(chat_text, user_name, user_stats, group_stats, api_key):
     
     You MUST respond in valid JSON format exactly like this:
     {{
-      "brutal_roast": "A 7-8 sentence hilarious brutal roast comparing them to the group. Use specific stats and examples (on how they interact or others interact with them) to make it personal and grounded in their actual texting behavior.",
+      "brutal_roast": "A 5-8 sentence hilarious brutal roast comparing them to the group. Use specific stats and examples (on how they interact or others interact with them) to make it personal and grounded in their actual texting behavior.",
       "biggest_red_flag": "Their worst texting habit. This should be something that genuinely stands out as annoying or cringey in their texts",
       "receipts": [
         {{
@@ -222,13 +222,13 @@ def get_user_roast(chat_text, user_name, user_stats, group_stats, api_key):
           "sender": "Name of the person who sent it (Can be from them, or from someone else mocking them)"
         }},
         {{
-          "quote": "Another exact verbatim text message",
-          "sender": "Exact Name (Can be from them, or from someone else mocking them)"
+          "quote": "Another exact verbatim text message (Can be from them, or from someone else mocking them)",
+          "sender": "Exact Name of the sender"
         }},
         {{
-          "quote": "Another exact verbatim text message",
-          "sender": "Exact Name (Can be from someone else mocking them or from them)"
-        }}
+          "quote": "Verbatim text possibly from a DIFFERENT person in the group who is mocking or talking about {user_name}",
+          "sender": "Exact Name of the other person"
+        }},
         ],
       "biggest_green_flag": "One backhandedly and sarcastically nice thing about their texts. This should be something that seems like a compliment but is actually a subtle jab"
     }}
@@ -243,30 +243,7 @@ def get_user_roast(chat_text, user_name, user_stats, group_stats, api_key):
     except Exception as e:
         return {"error": str(e), "raw_output": getattr(e, 'response', 'No raw output')}
 
-@st.cache_data(show_spinner=False)
-def get_group_superlatives(chat_text, api_key):
-    """Assigns funny yearbook-style superlatives to group members."""
-    if not chat_text or chat_text.strip() == "":
-        return {"error": "Not enough text data to assign superlatives."}
-        
-    client = Groq(api_key=api_key)
-    
-    
-    
-    try:
-        response = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": f"Chat data:\n{chat_text}"}
-            ],
-            model="llama-3.1-8b-instant",
-            response_format={"type": "json_object"},
-            temperature=0.7
-        )
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        return {"error": str(e), "raw_output": getattr(e, 'response', 'No raw output')}
-    
+
 
 @st.cache_data(show_spinner=False)
 def get_group_superlatives(chat_text, users_list, api_key):
