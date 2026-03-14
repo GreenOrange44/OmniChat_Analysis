@@ -1,5 +1,5 @@
 # 📊 OmniChat Analytics: Behavioral insights powered by LLaMA-3.
-**Live Demo:** []
+**Live Demo:** [https://omni-chat-analysis.streamlit.app/]
 
 An advanced, end-to-end conversational analytics engine that transforms raw WhatsApp export data into deep psychological, behavioral, and network insights. Moving beyond standard word-frequency counters, this application leverages Natural Language Processing (NLP) and Large Language Models (LLMs) to map social dynamics, detect sentiment trends, and generate AI-driven communication personas.
 
