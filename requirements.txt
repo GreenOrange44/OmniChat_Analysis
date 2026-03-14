@@ -7,3 +7,4 @@ groq
 nltk
 emoji
 wordcloud
+urlextract

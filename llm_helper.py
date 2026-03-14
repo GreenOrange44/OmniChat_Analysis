@@ -18,14 +18,25 @@ def sample_chat_for_llm(df, selected_user, sample_size=150):
     # Filter out junk (added na=False to prevent ValueError)
     df_clean = df_clean[~df_clean['message'].str.contains('<Media omitted>|This message was deleted', case=False, na=False)]
     df_clean = df_clean[df_clean['message'].str.split().str.len() > 2]
+    patterns = ['image omitted', 'sticker omitted',  'audio omitted', 'video omitted', 'GIF omitted', 'http://', 'https://']
+
+    df_clean= df_clean[df_clean['message'].apply(lambda x: not any(pattern in x for pattern in patterns))]
     
     # If the filter wiped out everything, return empty
     if df_clean.empty:
         return ""
 
     # Grab the most contextual messages + a random spread
-    longest_msgs = df_clean.assign(length=df_clean['message'].str.len()).nlargest(50, 'length')
-    random_msgs = df_clean.sample(min(100, len(df_clean)))
+    longest_msgs = df_clean.assign(length=df_clean['message'].str.len()).nlargest(150, 'length')
+    
+    # Remove those exact messages from the main dataframe pool using their index
+    remaining_pool = df_clean.drop(longest_msgs.index)
+    
+    # Take a random spread from whatever is left
+    random_msgs = remaining_pool.sample(min(150, len(remaining_pool)))
+    
+    # Combine them (no need for drop_duplicates anymore!)
+    sampled_df = pd.concat([longest_msgs, random_msgs])
     
     sampled_df = pd.concat([longest_msgs, random_msgs]).drop_duplicates()
     chat_text = "\n".join(sampled_df['users'] + ": " + sampled_df['message'])

@@ -2,41 +2,65 @@ import pandas as pd
 import re
 from collections import Counter
 import emoji
+from urlextract import URLExtract
+extractor = URLExtract()
 
-def fetch_stats(selected_user: str, df: pd.DataFrame) -> dict:
-    patterns = {
-            'image': 'image omitted',
-            'sticker': 'sticker omitted', 
-            'audio': 'audio omitted',
-            'video': 'video omitted',
-            'gif': 'GIF omitted'  # Note the capitalization
-        }
-    if selected_user == 'Overall':
+def fetch_stats(selected_user, df):
+    if selected_user != 'Overall':
+        df = df[df['users'] == selected_user]
 
-        # Count occurrences of each pattern
-        counts = {}
-        for key, pattern in patterns.items():
-            # Case-insensitive search
-            counts[key] = df['message'].str.contains(pattern, case=False, na=False).sum()
+    # 1. Total Messages
+    num_messages = df.shape[0]
 
-        return {
-            'total_messages': df.shape[0],
-            'total_words': df['message'].apply(lambda x: len(x.split())).sum(),
-            'media_messages': counts,
-            'links_shared': df['message'].apply(lambda x: len(re.findall(r'http[s]?://\S+', x))).sum()
-        }
-    else:
-        user_df = df[df['users'] == selected_user]
-        counts = {}
-        for key, pattern in patterns.items():
-            # Case-insensitive search
-            counts[key] = user_df['message'].str.contains(pattern, case=False, na=False).sum()
-        return {
-            'total_messages': user_df.shape[0],
-            'total_words': user_df['message'].apply(lambda x: len(x.split())).sum(),
-            'media_messages': counts,
-            'links_shared': user_df['message'].apply(lambda x: len(re.findall(r'http[s]?://\S+', x))).sum()
-        }
+    # 2. Total Words
+    words = []
+    for message in df['message']:
+        words.extend(message.split())
+
+    # 3. SMART MEDIA COUNTING
+    # Create a dictionary to hold whatever we find
+    media_dict = {
+        'Images': 0,
+        'Videos': 0,
+        'GIFs': 0,
+        'Audio/Voice Notes': 0,
+        'Documents': 0,
+        'Unspecified Media': 0
+    }
+
+    for message in df['message']:
+        msg_lower = message.lower()
+        
+        # Check for Android Generic
+        if '<media omitted>' in msg_lower:
+            media_dict['Unspecified Media'] += 1
+            
+        # Check for iOS specific or "Export With Media" filenames
+        elif 'image omitted' in msg_lower or '.jpg' in msg_lower or '.png' in msg_lower:
+            media_dict['Images'] += 1
+        elif 'video omitted' in msg_lower or '.mp4' in msg_lower:
+            media_dict['Videos'] += 1
+        elif 'gif omitted' in msg_lower or '.gif' in msg_lower:
+            media_dict['GIFs'] += 1
+        elif 'audio omitted' in msg_lower or '.opus' in msg_lower or '.mp3' in msg_lower:
+            media_dict['Audio/Voice Notes'] += 1
+        elif 'document omitted' in msg_lower or '.pdf' in msg_lower or '.docx' in msg_lower:
+            media_dict['Documents'] += 1
+
+    # Remove categories that have 0 counts so the UI stays clean
+    clean_media_dict = {k: v for k, v in media_dict.items() if v > 0}
+
+    # 4. Links Shared
+    links = []
+    for message in df['message']:
+        links.extend(extractor.find_urls(message))
+
+    return {
+        'total_messages': num_messages,
+        'total_words': len(words),
+        'media_messages': clean_media_dict, # Pass the clean dictionary
+        'links_shared': len(links)
+    }
     
 
 def fetch_frequent_users(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -56,7 +80,7 @@ def create_wordcloud(selected_user: str, df: pd.DataFrame):
         df = df[df['users'] == selected_user]
 
     temp = df[df['users'] != 'group_notification']
-    patterns = ['image omitted', 'sticker omitted', 'audio omitted', 'video omitted', 'GIF omitted', 'http://', 'https://']
+    patterns = ['image omitted', 'sticker omitted', 'audio omitted', 'video omitted', 'GIF omitted', 'http://', 'https://', '<Media omitted>']
     temp = temp[temp['message'].apply(lambda x: not any(pattern in x for pattern in patterns))]
     
     # 2. Add collocations=False and pass stopwords directly
@@ -81,7 +105,8 @@ def most_common_words(selected_user: str,df: pd.DataFrame) -> pd.DataFrame:
         df = df[df['users'] == selected_user]
 
     temp = df[df['users'] != 'group_notification']
-    patterns = ['image omitted', 'sticker omitted',  'audio omitted', 'video omitted', 'GIF omitted', 'http://', 'https://']
+    patterns = ['image omitted', 'sticker omitted',  'audio omitted', 'video omitted', 'GIF omitted', 'http://', 'https://', '<Media omitted>']
+
     temp = temp[temp['message'].apply(lambda x: not any(pattern in x for pattern in patterns))]
 
     words = []
