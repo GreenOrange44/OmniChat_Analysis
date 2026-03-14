@@ -1,5 +1,6 @@
 import re
 import pandas as pd
+import streamlit as st
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
@@ -7,48 +8,59 @@ nltk.download('vader_lexicon')
 
 
 def preprocess(data: str, filename: str = "") -> pd.DataFrame:
+    # DYNAMIC GROUP NAME
     group_name = ""
     if filename:
-        # WhatsApp standard export names are "WhatsApp Chat with [Name].txt"
-        # We strip the prefix and suffix to get the exact group name dynamically
         group_name = filename.replace("WhatsApp Chat with ", "").replace(".txt", "").strip()
 
-    #pattern = r'\[\d{1,2}/\d{1,2}/\d{2,4},\s+\d{1,2}:\d{2}:\d{2}\s+[AP]M\]'
-    pattern = r'\[\d{1,2}/\d{1,2}/\d{2,4},\s+\d{1,2}:\d{2}:\d{2}(?:\s+[AP]M)?\]'
+    # AUTO-DETECT OS FORMAT
+    # iOS: [DD/MM/YY, HH:MM:SS]
+    ios_pattern = r'\[\d{1,2}/\d{1,2}/\d{2,4},\s+\d{1,2}:\d{2}:\d{2}(?:\s+[AP]M)?\]'
+    # Android: DD/MM/YY, HH:MM pm - 
+    android_pattern = r'\d{1,2}/\d{1,2}/\d{2,4},\s+\d{1,2}:\d{2}(?:\s+[aApP][mM])?\s+-\s+'
 
+    if re.search(ios_pattern, data):
+        pattern = ios_pattern
+        is_android = False
+    elif re.search(android_pattern, data):
+        pattern = android_pattern
+        is_android = True
+    else:
+        # Stop the app gracefully with a UI error instead of a Python crash
+        st.error("🚨 Unsupported file format. Please upload a standard WhatsApp exported .txt file.")
+        st.stop()
+
+    # SPLIT DATA
     messages = re.split(pattern, data)[1:]
     dates = re.findall(pattern, data)
-
+    
     df = pd.DataFrame({'user_message': messages, 'message_date': dates})
 
-    df['message_date'] = df['message_date'].str.strip('[]')
+    # CLEAN DATES & PARSE DATETIME
+    if is_android:
+        # Strip the trailing hyphen and spaces from Android dates
+        df['message_date'] = df['message_date'].str.replace(r'\s+-\s*$', '', regex=True)
+    else:
+        # Strip the brackets from iOS dates
+        df['message_date'] = df['message_date'].str.strip('[]')
 
-    date_12h = pd.to_datetime(df['message_date'], format='%d/%m/%y, %I:%M:%S %p', errors='coerce')
-    date_24h = pd.to_datetime(df['message_date'], format='%d/%m/%y, %H:%M:%S', errors='coerce')
-    
-    # Combine them (if 12h fails, it uses 24h)
-    df['message_date'] = date_12h.fillna(date_24h)
+    # Pandas 'mixed' format solves all 12hr/24hr and DD/MM vs MM/DD headaches!
+    df['message_date'] = pd.to_datetime(df['message_date'], format='mixed', dayfirst=True, errors='coerce')
 
-    # (Optional fallback just in case the year is 4 digits like 2024 instead of 24)
-    if df['message_date'].isnull().any():
-        df['message_date'] = pd.to_datetime(df['message_date'], dayfirst=True, errors='coerce')
-
-    # Extract the sender and the message
+    # EXTRACT USERS & MESSAGES
     extracted = df['user_message'].str.extract(r'^([^:]+):\s(.*)')
-
-    
     df['users'] = extracted[0]
     df['message'] = extracted[1]
 
-    # Clean up junk data (Meta AI and system notifications)
-    df = df.dropna(subset=['users', 'message']) # Drop the NaNs immediately.
-    df = df[df['users'].str.strip() != 'Meta AI']
-    df = df[df['users'].str.strip() != 'You']
+    # DROP INVALID ROWS (This instantly removes system alerts)
+    df = df.dropna(subset=['message_date', 'users', 'message'])
 
-    # Dynamically remove messages sent BY the group itself (Announcement groups)
+    # FILTER AI BOTS & ANNOUNCEMENTS
+    df = df[df['users'].str.strip() != 'You']
+    df = df[df['users'].str.strip() != 'Meta AI']
     if group_name:
         df = df[df['users'].str.strip() != group_name]
-
+    
     # Clean up any trailing whitespace or newlines in the messages
     df['message'] = df['message'].str.strip()
 
