@@ -48,8 +48,13 @@ if uploaded_file is not None:
     # Process Data
     bytes_data = uploaded_file.getvalue()
     data = bytes_data.decode('utf-8')
-    df = preprocessor.preprocess(data)
-
+    # Process the data
+    df = preprocessor.preprocess(data, uploaded_file.name)
+    
+    
+        
+    # --- PROCEED WITH THE REST OF THE APP ---
+    user_list = df['users'].unique().tolist()
     # Fetch users
     user_list = df['users'].unique().tolist()
     if 'group_notification' in user_list:
@@ -425,7 +430,15 @@ if uploaded_file is not None:
                                             st.caption(topic.get('description', ''))
                                             
                             elif "Superlative" in ai_mode:
-                                result = llm_helper.get_group_superlatives(chat_sample, api_key)
+                                # --- 1. EXTRACT UNIQUE USERS TO PREVENT HALLUCINATIONS ---
+                                # Grab up to 5 of the most active users to ensure we only roast the main characters
+                                top_users_list = df['users'].value_counts().nlargest(5).index.tolist()
+                                users_string = ", ".join(top_users_list)
+                                
+                                # --- 2. CALL THE API ---
+                                result = llm_helper.get_group_superlatives(chat_sample, users_string, api_key)
+                                
+                                # --- 3. RENDER RESULTS ---
                                 if not isinstance(result, dict) or "error" in result:
                                     st.error(f"Execution Error: {result.get('error', 'Unknown')}")
                                 else:
@@ -435,7 +448,6 @@ if uploaded_file is not None:
                                     if isinstance(superlatives, list):
                                         for item in superlatives:
                                             if isinstance(item, dict):
-                                                # Use st.info to make each superlative look like a neat card
                                                 st.info(f"**{item.get('user', 'Unknown')}** - 🏆 {item.get('title', 'Participant')}")
                                                 st.write(item.get('reason', ''))
                                     else:
@@ -531,6 +543,9 @@ if uploaded_file is not None:
                                     with col2:
                                         st.success(f"🟩 **Biggest Green Flag:**\n\n{result.get('biggest_green_flag', 'N/A')}")
 
+    # Optional Raw Data Viewer
+    if st.checkbox("🔍 Show Raw Dataframe"):
+        st.dataframe(df)
 else:
     # A welcoming empty state
     st.info("👈 Please upload a WhatsApp chat export to begin analysis.")

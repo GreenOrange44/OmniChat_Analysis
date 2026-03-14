@@ -188,10 +188,35 @@ def get_group_superlatives(chat_text, api_key):
         
     client = Groq(api_key=api_key)
     
+    
+    
+    try:
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": f"Chat data:\n{chat_text}"}
+            ],
+            model="llama-3.1-8b-instant",
+            response_format={"type": "json_object"},
+            temperature=0.7
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        return {"error": str(e), "raw_output": getattr(e, 'response', 'No raw output')}
+    
+
+@st.cache_data(show_spinner=False)
+def get_group_superlatives(chat_text, users_list, api_key):
+    """Assigns funny yearbook-style superlatives to specific group members."""
+    if not chat_text or chat_text.strip() == "":
+        return {"error": "Not enough text data to assign superlatives."}
+        
+    client = Groq(api_key=api_key)
+    
     prompt = """
 You are analyzing a group chat (WhatsApp/Telegram/Discord style) and creating a funny "Group Chat Awards" summary.
 
-Read the provided messages and identify the personalities of the most prominent users in the chat.
+Read the provided messages and identify the personalities of the most prominent users in the chat. The prominent users in this chat are: {users_list}
 
 Assign up to 5 humorous titles that reflect common group chat behavior. The humor should feel natural to Indian chat culture.
 
@@ -225,14 +250,13 @@ You MUST respond in valid JSON format exactly like this:
   ]
 }
 """
-    
     try:
         response = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": f"Chat data:\n{chat_text}"}
             ],
-            model="llama-3.1-8b-instant",
+            model="llama3-8b-8192",
             response_format={"type": "json_object"},
             temperature=0.7
         )

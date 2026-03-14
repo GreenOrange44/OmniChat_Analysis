@@ -13,10 +13,7 @@ def preprocess(data: str, filename: str = "") -> pd.DataFrame:
     if filename:
         group_name = filename.replace("WhatsApp Chat with ", "").replace(".txt", "").strip()
 
-    # AUTO-DETECT OS FORMAT
-    # iOS: [DD/MM/YY, HH:MM:SS]
-    ios_pattern = r'\[\d{1,2}/\d{1,2}/\d{2,4},\s+\d{1,2}:\d{2}:\d{2}(?:\s+[AP]M)?\]'
-    # Android: DD/MM/YY, HH:MM pm - 
+    ios_pattern = r'\[\d{1,2}/\d{1,2}/\d{2,4},\s+\d{1,2}:\d{2}:\d{2}(?:\s+[aApP][mM])?\]'
     android_pattern = r'\d{1,2}/\d{1,2}/\d{2,4},\s+\d{1,2}:\d{2}(?:\s+[aApP][mM])?\s+-\s+'
 
     if re.search(ios_pattern, data):
@@ -26,41 +23,73 @@ def preprocess(data: str, filename: str = "") -> pd.DataFrame:
         pattern = android_pattern
         is_android = True
     else:
-        # Stop the app gracefully with a UI error instead of a Python crash
         st.error("🚨 Unsupported file format. Please upload a standard WhatsApp exported .txt file.")
         st.stop()
 
-    # SPLIT DATA
     messages = re.split(pattern, data)[1:]
     dates = re.findall(pattern, data)
     
     df = pd.DataFrame({'user_message': messages, 'message_date': dates})
 
-    # CLEAN DATES & PARSE DATETIME
+    # CLEAN RAW DATE STRINGS
     if is_android:
-        # Strip the trailing hyphen and spaces from Android dates
         df['message_date'] = df['message_date'].str.replace(r'\s+-\s*$', '', regex=True)
     else:
-        # Strip the brackets from iOS dates
         df['message_date'] = df['message_date'].str.strip('[]')
 
-    # Pandas 'mixed' format solves all 12hr/24hr and DD/MM vs MM/DD headaches!
-    df['message_date'] = pd.to_datetime(df['message_date'], format='mixed', dayfirst=True, errors='coerce')
+    df['message_date'] = df['message_date'].str.upper().str.strip()
 
-    # EXTRACT USERS & MESSAGES
+    #  DYNAMIC DATE FORMAT INFERENCE ---
+    # Split the string to isolate just the date part (e.g., "26/08/23")
+    date_only = df['message_date'].str.split(',').str[0]
+    date_parts = date_only.str.split('/', expand=True)
+    
+    # Convert the first and second numbers to integers
+    p0 = pd.to_numeric(date_parts[0], errors='coerce')
+    p1 = pd.to_numeric(date_parts[1], errors='coerce')
+
+    # MATHEMATICAL CHECK:
+    # If any 2nd number is greater than 12 (e.g. 3/14/26), it MUST be MM/DD/YY
+    if p1.max() > 12:
+        date_fmts = ['%m/%d/%y', '%m/%d/%Y']
+    # If any 1st number is greater than 12 (e.g. 26/08/23), it MUST be DD/MM/YY
+    elif p0.max() > 12:
+        date_fmts = ['%d/%m/%y', '%d/%m/%Y']
+    # If ambiguous (e.g., all dates are like 05/06/23), default to Rest-of-World standard
+    else:
+        date_fmts = ['%d/%m/%y', '%d/%m/%Y']
+
+    time_fmts = [', %I:%M %p', ', %H:%M', ', %I:%M:%S %p', ', %H:%M:%S']
+    
+    # Combine the detected date format with all possible time formats
+    formats = [d + t for d in date_fmts for t in time_fmts]
+
+    # --- 4. CASCADING PARSER ---
+    parsed_dates = pd.Series(pd.NaT, index=df.index)
+    for fmt in formats:
+        missing = parsed_dates.isna()
+        if not missing.any(): 
+            break
+        temp = pd.to_datetime(df.loc[missing, 'message_date'], format=fmt, errors='coerce')
+        parsed_dates = parsed_dates.fillna(temp)
+
+    df['message_date'] = parsed_dates
+    
+    # Drop any severely corrupted lines
+    df = df.dropna(subset=['message_date'])
+
+    # --- 5. EXTRACT USERS & MESSAGES ---
     extracted = df['user_message'].str.extract(r'^([^:]+):\s(.*)')
     df['users'] = extracted[0]
     df['message'] = extracted[1]
 
-    # DROP INVALID ROWS (This instantly removes system alerts)
-    df = df.dropna(subset=['message_date', 'users', 'message'])
+    df = df.dropna(subset=['users', 'message'])
 
-    # FILTER AI BOTS & ANNOUNCEMENTS
-    df = df[df['users'].str.strip() != 'You']
+    # Filter Bots
     df = df[df['users'].str.strip() != 'Meta AI']
     if group_name:
         df = df[df['users'].str.strip() != group_name]
-    
+
     # Clean up any trailing whitespace or newlines in the messages
     df['message'] = df['message'].str.strip()
 
