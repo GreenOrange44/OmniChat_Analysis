@@ -25,6 +25,7 @@ def fetch_stats(selected_user, df):
         'GIFs': 0,
         'Audio/Voice Notes': 0,
         'Documents': 0,
+        'Stickers': 0,
         'Unspecified Media': 0
     }
 
@@ -46,6 +47,8 @@ def fetch_stats(selected_user, df):
             media_dict['Audio/Voice Notes'] += 1
         elif 'document omitted' in msg_lower or '.pdf' in msg_lower or '.docx' in msg_lower:
             media_dict['Documents'] += 1
+        elif 'sticker omitted' in msg_lower or '.sticker' in msg_lower:
+            media_dict['Stickers'] += 1
 
     # Remove categories that have 0 counts so the UI stays clean
     clean_media_dict = {k: v for k, v in media_dict.items() if v > 0}

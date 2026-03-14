@@ -450,6 +450,9 @@ if uploaded_file is not None:
                                             if isinstance(item, dict):
                                                 st.info(f"**{item.get('user', 'Unknown')}** - 🏆 {item.get('title', 'Participant')}")
                                                 st.write(item.get('reason', ''))
+                                                if item.get('defining_quote'):
+                                                    st.caption(f"**Quote:** \"{item.get('defining_quote')}\"")
+
                                     else:
                                         st.warning("Could not render superlatives. Model returned an unexpected structure.")
                                         st.json(result)
@@ -469,9 +472,10 @@ if uploaded_file is not None:
                             
                             # --- 1. EXTRACT BEHAVIORAL METRICS ---
                             # Get the behavioral data for the whole chat
+                            # --- 1. EXTRACT BEHAVIORAL METRICS ---
                             starters, killers, _, response_times = helper.behavioral_analysis(df)
                             
-                            # Safely extract this specific user's metrics
+                            # Individual Stats
                             user_starter = starters[starters['User'] == selected_user]
                             initiation_rate = user_starter['Starter Rate (%)'].values[0] if not user_starter.empty else "0"
                             
@@ -480,10 +484,8 @@ if uploaded_file is not None:
                             
                             user_response = response_times[response_times['User'] == selected_user]
                             avg_resp = user_response['Avg Response Time (Mins)'].values[0] if not user_response.empty else "Unknown"
-                            if avg_resp != "Unknown":
-                                avg_resp = round(avg_resp, 1)
+                            if avg_resp != "Unknown": avg_resp = round(avg_resp, 1)
 
-                            # Get basic stats and sentiment
                             user_df = df[df['users'] == selected_user]
                             total_msgs = len(user_df)
                             avg_sentiment = "Neutral"
@@ -492,19 +494,32 @@ if uploaded_file is not None:
                                 avg_sentiment = "Positive" if score > 0.05 else "Negative" if score < -0.05 else "Neutral"
                             most_active = f"{user_df['hour'].mode().iloc[0]}:00" if not user_df.empty else 'Unknown'
 
-                            # --- 2. BUILD THE ULTIMATE STATS CONTEXT ---
                             stats_context = f"""
                             - Total Messages Sent: {total_msgs}
                             - Average Emotional Tone: {avg_sentiment}
                             - Most Active Time of Day: {most_active}
-                            - Conversation Initiation Rate: {initiation_rate}% (How often they start a chat when present)
-                            - Vibe Kill Rate: {kill_rate}% (How often they send the final message that no one replies to)
+                            - Conversation Initiation Rate: {initiation_rate}%
+                            - Vibe Kill Rate: {kill_rate}%
                             - Average Response Time: {avg_resp} minutes
+                            """
+                            
+                            # --- 2. EXTRACT OVERALL GROUP BASELINE ---
+                            group_total_msgs = len(df)
+                            group_avg_resp = response_times['Avg Response Time (Mins)'].mean() if not response_times.empty else 0
+                            
+                            # Find the top 3 users to see if the selected user is one of the "main characters"
+                            active_users_df, _ = helper.fetch_frequent_users(df)
+                            top_yappers = ", ".join(active_users_df['users'].head(3).tolist()) if not active_users_df.empty else "Unknown"
+                            
+                            group_stats_context = f"""
+                            - Total Messages Sent by the Entire Group: {group_total_msgs}
+                            - Group's Overall Average Response Time: {group_avg_resp:.1f} minutes
+                            - The 3 Most Talkative People in this Group: {top_yappers}
                             """
                             
                             # --- 3. ROUTE TO THE CORRECT API ---
                             if "Profile" in ai_mode:
-                                result = llm_helper.get_user_persona(chat_sample, selected_user, stats_context, api_key)
+                                result = llm_helper.get_user_persona(chat_sample, selected_user, stats_context, group_stats_context, api_key)
                                 
                                 if not isinstance(result, dict) or "error" in result:
                                     st.error(f"API Error: {result.get('error', 'Unknown')}")
@@ -525,9 +540,14 @@ if uploaded_file is not None:
                                         st.markdown("**🎯 Top Topics of Interest**")
                                         for topic in result.get('top_interests', []):
                                             st.markdown(f"- {topic}")
+
+                                    if result.get('signature_quotes'):
+                                        st.markdown("**💬 Signature Quotes**")
+                                        for quote in result.get('signature_quotes', []):
+                                            st.markdown(f"> {quote}")
                                             
                             elif "Roast" in ai_mode:
-                                result = llm_helper.get_user_roast(chat_sample, selected_user, stats_context, api_key)
+                                result = llm_helper.get_user_roast(chat_sample, selected_user, stats_context, group_stats_context, api_key)
                                 
                                 if not isinstance(result, dict) or "error" in result:
                                     st.error(f"API Error: {result.get('error', 'Unknown')}")
@@ -535,6 +555,23 @@ if uploaded_file is not None:
                                     st.success("Boom. Roasted. 🎤")
                                     st.markdown(f"### 🔥 The Roast of {selected_user}")
                                     st.write(result.get('brutal_roast', 'Model refused to roast.'))
+                                    
+                                    st.markdown("---")
+
+                                    # --- Render The Receipts ---
+                                    receipts = result.get('receipts', [])
+                                    if receipts and isinstance(receipts, list):
+                                        st.markdown("### 🧾 The Receipts")
+                                        for item in receipts:
+                                            # Safely handle the new dictionary structure
+                                            if isinstance(item, dict):
+                                                quote = item.get('quote', 'Could not extract quote.')
+                                                sender = item.get('sender', 'Unknown')
+                                                st.markdown(f"> *\"{quote}\"*")
+                                                st.caption(f"— **{sender}**")
+                                            elif isinstance(item, str):
+                                                # Fallback just in case the LLM stubbornly returns a string
+                                                st.markdown(f"> *\"{item}\"*")
                                     
                                     st.markdown("---")
                                     col1, col2 = st.columns(2)
